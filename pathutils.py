@@ -42,6 +42,10 @@ class File:
         return self._path is not None and isfile(self._path)
 
     def __iter__(self) -> Generator[str, None, None]:
+        """ Implement a basic iterator for File 
+        
+        File is opened as read text and each line is yielded until EOF. """
+        
         if self._path is None or not isfile(self._path):
             raise ValueError("path attribute must point to a file")
 
@@ -105,43 +109,87 @@ class File:
         
         return getsize(self._path)
 
-    def read_bytes(self, bufsize: int=-1) -> bytes:
-        """ Read file contents.
+    def read_bytes(self) -> bytes:
+        """ Read entire file contents.
          
         Return file contents as bytes.
 
-        `bufsize` must be either -1 (read whole file) or an integer counting the number of bytes to read.
+        Since this function reads the entire file, use `read_bytes_chunks()` for huge files. 
 
         Raises standard OS exceptions and additional TypeError or ValueError. """
 
         if self._path is None or not isfile(self._path):
             raise ValueError("path attribute must point to a file")
-        elif not isinstance(bufsize, int):
-            raise TypeError(f"Expected type int for argument bufsize, not {bufsize.__class__.__name__}")
         
         with open(self._path, "rb") as f:
-            return f.read(bufsize)
+            return f.read()
 
-    def read_text(self, bufsize: int=-1, encoding: str="utf-8") -> str:
-        """ Read file contents.
+    def read_text(self, encoding: str="utf-8") -> str:
+        """ Read entire file contents.
          
-        Return file contents as string.
-        
-        `bufsize` must be either -1 (read whole file) or an integer counting the number of characters to read.
-
         `encoding` must be a valid encoding string.
+
+        Return file contents as string.
+
+        Since this function reads the entire file, use `read_text_chunks()` for huge files. 
 
         Raises standard OS exceptions and additional TypeError or ValueError. """
 
         if self._path is None or not isfile(self._path):
             raise ValueError("path attribute must point to a valid file")
-        elif not isinstance(bufsize, int):
-            raise TypeError(f"Expected type int for argument bufsize, not {bufsize.__class__.__name__}")
         elif not isinstance(encoding, str):
             raise TypeError(f"Expected type str for argument encoding, not {encoding.__class__.__name__}")
 
         with open(self._path, "r", encoding=encoding) as f:
-            return f.read(bufsize)
+            return f.read()
+
+    def read_text_chunks(self, buf_size: int, encoding: str="utf-8") -> Generator[str, None, None]:
+        """ Read file contents as chunks. 
+        
+        `encoding` must be a valid encoding string.
+
+        Return a generator with each chunk specified by `buf_size` argument as a string. 
+        
+        Raises standard OS exceptions and additional ValueError or TypeError. """
+
+        if self._path is None or not isfile(self._path):
+            raise ValueError("path attribute must point to a valid file")
+        elif not isinstance(buf_size, int):
+            raise TypeError(f"Expected type int for argument buf_size, not {buf_size.__class__.__name__}")
+        elif buf_size <= 0:
+            raise ValueError(f"buf_size argument must be higher than 0")
+        elif not isinstance(encoding, str):
+            raise TypeError(f"Expected type str for argument encoding, not {encoding.__class__.__name__}")
+        
+        with open(self._path, encoding=encoding) as f:
+            while True:
+                buf = f.read(buf_size)
+                if not buf:
+                    return
+                
+                yield buf
+
+    def read_bytes_chunks(self, buf_size: int) -> Generator[bytes, None, None]:
+        """ Read file contents as chunks. 
+        
+        Return a generator with each chunk specified by `buf_size` argument as bytes. 
+        
+        Raises standard OS exceptions and additional ValueError or TypeError. """
+
+        if self._path is None or not isfile(self._path):
+            raise ValueError("path attribute must point to a valid file")
+        elif not isinstance(buf_size, int):
+            raise TypeError(f"Expected type int for argument buf_size, not {buf_size.__class__.__name__}")
+        elif buf_size <= 0:
+            raise ValueError(f"buf_size argument must be higher than 0")
+        
+        with open(self._path, "rb") as f:
+            while True:
+                buf = f.read(buf_size)
+                if not buf:
+                    return
+                
+                yield buf
 
     def write_bytes(self, content: bytes, append: bool=False) -> int:
         """ Write `content` to file as bytes, if it exists.
