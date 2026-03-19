@@ -5,7 +5,7 @@ from hashlib import sha1, sha224, sha256, sha384, sha512
 
 from re import Pattern
 
-from typing import Generator, Union
+from typing import Generator, Union, Callable
 
 class File:
     """ File object.
@@ -148,7 +148,7 @@ class File:
         
         `encoding` must be a valid encoding string.
 
-        Return a generator with each chunk specified by `buf_size` argument as a string. 
+        Return a generator with each chunk specified by the buffer size as a string. 
         
         Raises standard OS exceptions and additional ValueError or TypeError. """
 
@@ -172,7 +172,7 @@ class File:
     def read_bytes_chunks(self, buf_size: int) -> Generator[bytes, None, None]:
         """ Read file contents as chunks. 
         
-        Return a generator with each chunk specified by `buf_size` argument as bytes. 
+        Return a generator with each chunk specified by the buffer size as bytes. 
         
         Raises standard OS exceptions and additional ValueError or TypeError. """
 
@@ -192,7 +192,7 @@ class File:
                 yield buf
 
     def write_bytes(self, content: bytes, append: bool=False) -> int:
-        """ Write `content` to file as bytes, if it exists.
+        """ Write given content to file as bytes.
 
         Return number of bytes written.
         
@@ -210,7 +210,7 @@ class File:
             return f.write(content)
         
     def write_text(self, content: str, encoding: str="utf-8", append: bool=False) -> int:
-        """ Write `content` to file as text, if it exists.
+        """ Write given content to file as text.
 
         Returns number of characters written. 
         
@@ -228,6 +228,56 @@ class File:
         mode = "w" if not append else "a"
         with open(self._path, mode, encoding=encoding) as f:
             return f.write(content)
+
+    def write_text_chunks(self, reader: Callable[[], Generator[str, None, None]], encoding: str="utf-8", append: bool=False) -> int:
+        """ Write chunks of text from reader argument to file. 
+        
+        `reader` must be a callable returning a generator object that yields strings. 
+        
+        Return the total amount of characters written. 
+        
+        Raises standard OS exceptions and additional ValueError and TypeError. """
+
+        if self._path is None:
+            raise ValueError("path attribute must point to a file")
+        elif not isinstance(encoding, str):
+            raise TypeError(f"Expected type str for encoding argument, not {encoding.__class__.__name__}")
+        elif not isinstance(append, bool):
+            raise TypeError(f"Expected type bool for argument append, not {append.__class__.__name__}")
+        
+        mode = "a" if append else "w"
+        total = 0
+
+        with open(self._path, mode, encoding=encoding) as f:
+            for chunk in reader():
+                written = f.write(chunk)
+                total += written
+
+        return total
+    
+    def write_bytes_chunks(self, reader: Callable[[], Generator[bytes, None, None]], append: bool=False) -> int:
+        """ Write chunks of bytes from reader argument to file. 
+        
+        `reader` must be a callable returning a generator object that yields bytes. 
+        
+        Return the total amount of bytes written. 
+        
+        Raises standard OS exceptions and additional ValueError and TypeError. """
+
+        if self._path is None:
+            raise ValueError("path attribute must point to a file")
+        elif not isinstance(append, bool):
+            raise TypeError(f"Expected type bool for argument append, not {append.__class__.__name__}")
+        
+        mode = "ab" if append else "wb"
+        total = 0
+
+        with open(self._path, mode) as f:
+            for chunk in reader():
+                written = f.write(chunk)
+                total += written
+
+        return total
 
     def grep(self, item: str | Pattern) -> list[str]:
         """ Find occurrences of `item` in each line in the file.
