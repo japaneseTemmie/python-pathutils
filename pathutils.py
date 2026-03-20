@@ -1,4 +1,4 @@
-from os.path import join, isfile, isdir, exists, basename, islink, getsize, getmtime, getatime, getctime, ismount
+from os.path import join, isfile, isdir, lexists, basename, islink, getsize, getmtime, getatime, getctime, ismount
 from os import remove, rmdir, scandir, makedirs, readlink
 from shutil import copy2, move
 from hashlib import sha1, sha224, sha256, sha384, sha512
@@ -18,7 +18,9 @@ class File:
 
     `iter(File)` -> returns a generator object for each line 
     
-    Raises ValueError and TypeError on invalid data. """
+    Raises ValueError and TypeError on invalid data. 
+    
+    Does not support broken symlinks. """
 
     def __init__(self, path: str, ensure_exists: bool=False) -> None:
         if not isinstance(path, str):
@@ -27,14 +29,14 @@ class File:
         if not path:
             raise ValueError(f"Expected a string pointing to a file for argument path")
 
-        if not exists(path):
+        if not lexists(path):
 
             if ensure_exists:
                 open(path, "a").close() # do not use 'w' as this could wipe a file in a race condition
             else:
                 raise ValueError(f"File {path} does not exist")
         elif not isfile(path):
-            raise ValueError("path argument must be a file, not folder")
+            raise ValueError("path argument must be a file, not folder or broken symlink")
 
         self._path = path
 
@@ -55,7 +57,7 @@ class File:
 
     @property
     def linked_file(self) -> str | None:
-        if self._path is None or not isfile(self._path) or not islink(self._path):
+        if self._path is None or not islink(self._path):
             return None
         
         return readlink(self._path)
@@ -76,7 +78,7 @@ class File:
     
     @property
     def is_symlink(self) -> bool:
-        if self._path is None or not isfile(self._path):
+        if self._path is None:
             return False
         
         return islink(self._path)
@@ -400,7 +402,9 @@ class Folder:
     
     `iter(Folder)` -> returns an iterator of the folder's files and directories.
     
-    Raises ValueError or TypeError on invalid data. """
+    Raises ValueError or TypeError on invalid data. 
+    
+    Does not support broken symlinks. """
 
     def __init__(self, path: str, ensure_exists: bool=False) -> None:
         if not isinstance(path, str):
@@ -409,14 +413,14 @@ class Folder:
         if not path:
             raise ValueError("Expected string pointing to a folder for argument path")
         
-        if not exists(path):
+        if not lexists(path):
 
             if ensure_exists:
                 makedirs(path, exist_ok=True)
             else:
                 raise ValueError(f"Directory {path} does not exist")
         elif not isdir(path):
-            raise ValueError(f"Path must be a directory, not a file")
+            raise ValueError(f"Path must be a directory, not a file or broken symlink")
 
         self._path = path
 
@@ -439,7 +443,7 @@ class Folder:
 
     @property
     def linked_folder(self) -> str | None:
-        if self._path is None or not isdir(self._path) or not islink(self._path):
+        if self._path is None or not islink(self._path):
             return None
         
         return readlink(self._path)
@@ -467,7 +471,7 @@ class Folder:
 
     @property
     def is_symlink(self) -> bool:
-        if self._path is None or not isdir(self._path):
+        if self._path is None:
             return False
         
         return islink(self._path)
