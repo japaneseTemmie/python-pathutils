@@ -611,6 +611,12 @@ class Folder:
         for subfolder in self.subfolders():
             subfolder.delete()
 
+        # look for broken links
+        with scandir(self._path) as iterator:
+            for entry in iterator:
+                if entry.is_symlink():
+                    remove(entry.path)
+
         rmdir(self._path)
 
         self._path = None
