@@ -327,7 +327,7 @@ class File:
 
     def copy_to(self, path: str) -> tuple["File", "File"]:
         """ Copy the file to a new location.
-        
+
         Symlinks are always followed.
 
         Returns source file and new file.
@@ -676,6 +676,12 @@ class Folder:
             other_moved_files = subfolder.move_to(join(path, subfolder.name))
 
             moved_files.extend(other_moved_files)
+
+        # look for broken links here too
+        with scandir(self._path) as iterator:
+            for entry in iterator:
+                if entry.is_symlink():
+                    move(entry.path, join(path, entry.name))
 
         rmdir(self._path)
 
