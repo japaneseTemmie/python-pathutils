@@ -1,5 +1,5 @@
-from os.path import join, isfile, isdir, lexists, basename, islink, getsize, getmtime, getatime, getctime, ismount
-from os import remove, rmdir, scandir, makedirs, readlink
+from os.path import join, isfile, isdir, lexists, basename, islink, getsize, getmtime, getatime, getctime, ismount, abspath
+from os import remove, rmdir, scandir, makedirs, readlink, symlink
 from shutil import copy2, move
 from hashlib import sha1, sha224, sha256, sha384, sha512
 
@@ -38,7 +38,7 @@ class File:
         elif not isfile(path):
             raise ValueError("path argument must be a file, not folder or broken symlink")
 
-        self._path = path
+        self._path = abspath(path)
 
     def __bool__(self) -> bool:
         return self._path is not None and isfile(self._path)
@@ -122,7 +122,7 @@ class File:
 
         if self._path is None or not isfile(self._path):
             raise ValueError("path attribute must point to a file")
-        
+
         with open(self._path, "rb") as f:
             return f.read()
 
@@ -325,10 +325,8 @@ class File:
 
         self._path = None
 
-    def copy_to(self, path: str) -> tuple["File", "File"]:
+    def copy_to(self, path: str, follow_symlinks: bool=True) -> tuple["File", "File"]:
         """ Copy the file to a new location.
-
-        Symlinks are always followed.
 
         Returns source file and new file.
 
@@ -336,10 +334,12 @@ class File:
         
         if not isinstance(path, str):
             raise TypeError(f"Expected type str for argument path, not {path.__class__.__name__}")
+        elif not isinstance(follow_symlinks, bool):
+            raise TypeError(f"Expected type bool for argument follow_symlinks, not {follow_symlinks.__class__.__name__}")
         elif self._path is None or not isfile(self._path):
             raise ValueError("path attribute must point to a file")
         
-        new_path = copy2(self._path, path)
+        new_path = copy2(self._path, path, follow_symlinks=follow_symlinks)
 
         return self, File(new_path)
 
@@ -356,7 +356,7 @@ class File:
             raise ValueError("path attribute must point to a file")
 
         new_path = move(self._path, path)
-        self._path = new_path
+        self._path = abspath(new_path)
 
     def hash(self, hash_type: str="sha256") -> str:
         """ Return a hash of the file.
@@ -391,6 +391,22 @@ class File:
 
         return file_hash.hexdigest()
 
+    def link_to(self, dest: str) -> "File":
+        """ Symlink a file to this one. 
+        
+        Return linked file.
+
+        Raises standard OS exceptions and additional ValueError and TypeError. """
+
+        if not isinstance(dest, str):
+            raise TypeError(f"Expected type str for argument dest, not {dest.__class__.__name__}")
+        elif self._path is None or not isfile(self._path):
+            raise ValueError("dest attribute must point to a valid file")
+        
+        symlink(self._path, dest)
+
+        return File(dest)
+
 class Folder:
     """ Folder object.
      
@@ -422,12 +438,16 @@ class Folder:
         elif not isdir(path):
             raise ValueError(f"Path must be a directory, not a file or broken symlink")
 
-        self._path = path
+        self._path = abspath(path)
 
     def __bool__(self) -> bool:
         return self._path is not None and isdir(self._path)
 
     def __iter__(self) -> Generator[Union[File, "Folder"], None, None]:
+        """ Basic generator that yields valid/usable files/folders/symlinks 
+        
+        **Does not yield broken links** """
+        
         if self._path is None or not isdir(self._path):
             raise ValueError("path attribute must point to a folder")
 
@@ -479,7 +499,9 @@ class Folder:
     def files(self) -> Generator[File, None, None]:
         """ Return a generator of file objects present in the directory. 
         
-        Source directory will be sorted. """
+        Source directory will be sorted. 
+        
+        **Does not yield broken links** """
 
         if self._path is None or not isdir(self._path):
             raise ValueError("path attribute must point to a folder")
@@ -495,7 +517,10 @@ class Folder:
     def subfolders(self) -> Generator["Folder", None, None]:
         """ Return a generator object with subfolders present in the folder. 
         
-        Source directory will be sorted. """
+        Source directory will be sorted. 
+        
+        **Does not yield broken links** """
+
         if self._path is None or not isdir(self._path):
             raise ValueError("path attribute must point to a folder")
         
@@ -599,7 +624,7 @@ class Folder:
 
         if self._path is None or not isdir(self._path):
             raise ValueError("path attribute must point to a folder")
-        elif self.is_symlink: # remove link itself, do not recurse into it
+        elif islink(self._path): # remove link itself, do not recurse into it
             remove(self._path)
             self._path = None
 
@@ -621,10 +646,8 @@ class Folder:
 
         self._path = None
 
-    def copy_to(self, path: str) -> list[tuple[File, File]]:
+    def copy_to(self, path: str, follow_symlinks: bool=True) -> list[tuple[File, File]]:
         """ Copy the folder's contents to a new location. 
-        
-        Symlinks are always followed.
 
         Return a list of tuples with original file and destination file.
 
@@ -632,6 +655,8 @@ class Folder:
         
         if not isinstance(path, str):
             raise TypeError(f"Expected type str for argument path, not {path.__class__.__name__}")
+        elif not isinstance(follow_symlinks, bool):
+            raise TypeError(f"Expected type bool for argument follow_symlinks, not {follow_symlinks.__class__.__name__}")
         elif self._path is None or not isdir(self._path):
             raise ValueError("path attribute must point to a folder")
 
@@ -640,12 +665,16 @@ class Folder:
         makedirs(path, exist_ok=True)
 
         for file in self.files():
-            source_file, new_file = file.copy_to(join(path, file.name))
+            source_file, new_file = file.copy_to(join(path, file.name), follow_symlinks)
             pairs.append((source_file, new_file))
 
         for subfolder in self.subfolders():
-            other_pairs = subfolder.copy_to(join(path, subfolder.name))
-            pairs.extend(other_pairs)
+            if not follow_symlinks and islink(subfolder.path):
+                src = readlink(subfolder.path)
+                symlink(src, join(path, subfolder.name))
+            else:
+                other_pairs = subfolder.copy_to(join(path, subfolder.name), follow_symlinks)
+                pairs.extend(other_pairs)
 
         return pairs
 
@@ -669,13 +698,14 @@ class Folder:
         
         for file in self.files():
             file.move_to(join(path, file.name))
-
             moved_files.append(file)
 
         for subfolder in self.subfolders():
-            other_moved_files = subfolder.move_to(join(path, subfolder.name))
-
-            moved_files.extend(other_moved_files)
+            if islink(subfolder.path):
+                move(subfolder.path, join(path, subfolder.name))
+            else:
+                other_moved_files = subfolder.move_to(join(path, subfolder.name))
+                moved_files.extend(other_moved_files)
 
         # look for broken links here too
         with scandir(self._path) as iterator:
@@ -685,7 +715,7 @@ class Folder:
 
         rmdir(self._path)
 
-        self._path = path
+        self._path = abspath(path)
 
         return moved_files
 
@@ -728,3 +758,19 @@ class Folder:
             if other_matches: matches.extend(other_matches)
 
         return matches
+
+    def link_to(self, dest: str) -> "Folder":
+        """ Symlink a folder to this one. 
+        
+        Return linked folder.
+
+        Raises standard OS exceptions and additional ValueError and TypeError. """
+
+        if not isinstance(dest, str):
+            raise TypeError(f"Expected type str for argument dest, not {dest.__class__.__name__}")
+        elif self._path is None or not isdir(self._path):
+            raise ValueError("dest attribute must point to a valid folder")
+        
+        symlink(self._path, dest, True)
+
+        return Folder(dest)
