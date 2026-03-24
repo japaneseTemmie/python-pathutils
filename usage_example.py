@@ -32,9 +32,12 @@ def link_to_example() -> None:
 def copy_to_example() -> None:
     try:
         folder = Folder("testFolder")
-        folder.copy_to("testFolder_backup", False)
+        copied = folder.copy_to("testFolder_backup", False)
+
+        print(f"Copied {len(copied)} entries to testFolder_backup/")
     except (OSError, ValueError) as exc:
         print(f"An error occurred while coping folder.\nErr: {exc}")
+
 def main() -> None:
     write_bytes_chunks_example()
     link_to_example()
