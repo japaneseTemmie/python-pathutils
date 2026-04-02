@@ -1,3 +1,5 @@
+# This project is no longer maintained and is mostly unsafe to use due to bad symlink handling.
+
 # Python FS utilities
 My own set of object-oriented filesystem utilities for Python3.
 
